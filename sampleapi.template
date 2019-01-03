@@ -1,0 +1,160 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Template for APIGateway and lambda",
+
+  "Parameters" : {
+    "S3BucketName" :{
+      "Type": "String",
+      "Description": "Bucket name of the S3 bucket which has the Lambda function"
+    },
+    "S3Key" :{
+      "Type": "String",
+      "Description": "Name of the Lambda function zip file"
+    }
+  },
+  "Resources" : {
+    "HelloWorldLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "hellowrold",
+        "Handler": "index.handleHttpRequest",
+        "Role": { "Fn::GetAtt" : ["LambdaExecutionRole", "Arn"] },
+        "Code": {
+          "S3Bucket": {"Ref": "S3BucketName"},
+          "S3Key": {"Ref": "S3Key"}
+        },
+        "Runtime": "nodejs8.10",
+        "Timeout": 30
+      }
+    },
+    "LambdaExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{ "Effect": "Allow", "Principal": {"Service": ["lambda.amazonaws.com"]}, "Action": ["sts:AssumeRole"] }]
+        },
+        "Path": "/",
+        "Policies": [{
+          "PolicyName": "loggingPolicy",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [{ "Effect": "Allow", "Action": ["logs:*"], "Resource": "arn:aws:logs:*:*:*" }]
+          }
+        }]
+      }
+    },
+    "HelloWorldApiGateway": {
+      "Type": "AWS::ApiGateway::RestApi",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "${AWS::StackName}-HelloWorldApiGateway"
+        },
+        "Description": "API Gateway to invoke lambda",
+        "FailOnWarnings": true,
+        "Body": {
+          "swagger": "2.0",
+          "info": {
+            "version": "2018-12-12T08:54:01Z",
+            "title": "helloworld"
+          },
+          "basePath": "/",
+          "schemes": [
+            "https"
+          ],
+          "paths": {
+            "/helloworld": {
+              "get": {
+                "responses": {
+                  "200": {
+                    "description": "200 response"
+                  }
+                },
+                "x-amazon-apigateway-integration": {
+                  "uri": {
+                    "Fn::Sub": "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HelloWorldLambda.Arn}/invocations"
+                  },
+                  "responses": {
+                    "default": {
+                      "statusCode": "200"
+                    }
+                  },
+                  "passthroughBehavior": "when_no_match",
+                  "httpMethod": "POST",
+                  "type": "aws_proxy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "HelloWorlApiGatewayProdStage": {
+      "Type": "AWS::ApiGateway::Stage",
+      "Properties": {
+        "Variables": {
+          "LambdaFunctionName": {
+            "Ref": "HelloWorldLambda"
+          }
+        },
+        "RestApiId": {
+          "Ref": "HelloWorldApiGateway"
+        },
+        "DeploymentId": {
+          "Ref": "HelloWorlApiGatewayDeployment"
+        },
+        "StageName": "Prod"
+      }
+    },
+    "HelloWorlApiGatewayDeployment": {
+      "Type": "AWS::ApiGateway::Deployment",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "HelloWorldApiGateway"
+        }
+      }
+    },
+    "ApiGatewayLambdaExecutionPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:invokeFunction",
+        "Principal": "apigateway.amazonaws.com",
+        "FunctionName": {
+          "Ref": "HelloWorldLambda"
+        },
+        "SourceArn": {
+          "Fn::Sub": "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HelloWorldApiGateway}/*"
+        }
+      }
+    },
+    "ApiGatewayLambdaInvokePolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "Description": "Allow the invocation of the lambda",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Action": [
+                "lambda:InvokeFunction"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HelloWorldApiGateway}/*"
+                }
+              ],
+              "Effect": "Allow"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs" : {
+    "LambdaARN" : {
+      "Description": "ARN for the lambda created",
+      "Value" : { "Fn::GetAtt" : [ "HelloWorldLambda", "Arn" ]}
+    }
+  }
+}
